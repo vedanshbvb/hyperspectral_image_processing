@@ -1,4 +1,4 @@
-# Hyperspectral Image Processing — Software Engineering Challenge
+# Hyperspectral Image Processing- Software Engineering Challenge
 
 This project performs specific operations on a **hyperspectral satellite image** (`sample_image.tif`) in a structured, modular, and performance-optimized way.  
 The goal is to showcase both **correctness** and **software engineering principles**, including performance benchmarking, modularity, and reproducibility.

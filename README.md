@@ -184,8 +184,8 @@ pixxel_asn
 ├── parallel_results/  
 ├── parallel_with_chunking_results/    
 └── images/       
-    ├── ss1.png    
-    └── ss2.png
+     ├── ss1.png    
+     └── ss2.png
 
 
 

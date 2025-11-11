@@ -172,9 +172,9 @@ Here is how we can do it:
 ## Directory Structure
 
 The project is organized as follows:
-pixxel_asn
-│
-├── README.md   
+pixxel_asn   
+│   
+├── README.md     
 ├── sample_image.tif    
 ├── requirements.txt  
 ├── normal.py  
@@ -183,9 +183,9 @@ pixxel_asn
 ├── normal_results/   
 ├── parallel_results/  
 ├── parallel_with_chunking_results/    
-└── images/
-    └── ss1.png
-    ├── ss2.png  
+└── images/    
+    └── ss1.png   
+    ├── ss2.png      
 
 
 

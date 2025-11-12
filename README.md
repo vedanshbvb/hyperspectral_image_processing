@@ -78,7 +78,7 @@ z = 20
 
 
 ## Chunking
-The Time complexity for parallel processing is O(p * r * c)
+The Space complexity for parallel processing is O(p * r * c)
 This may put a significant load on the RAM, 
 
 So in cases like this, one thing which we can do is chunking!

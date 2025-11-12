@@ -151,14 +151,132 @@ def create_mask_and_geojson(input_path, band_index, threshold=100, output_dir="p
 # ---------- Step-C (Parallel + Aggregation) ----------
 import tempfile
 
-def process_chunk_mask(i, input_path, threshold, chunk, output_dir, profile):
-    """
-    Worker: read window of band i, threshold it, write a small temporary tile tif,
-    and return its path plus the chunk coords (row_start, col_start, row_end, col_end).
-    """
+# def process_chunk_mask(i, input_path, threshold, chunk, output_dir, profile):
+#     """
+#     Worker: read window of band i, threshold it, write a small temporary tile tif,
+#     and return its path plus the chunk coords (row_start, col_start, row_end, col_end).
+#     """
+#     row_start, col_start, row_end, col_end = chunk
+#     with rasterio.open(input_path) as src:
+#         # read only the window
+#         band = src.read(i + 1, window=((row_start, row_end), (col_start, col_end)))
+
+#     mask_zeros = (band == 0)
+#     mask_data = np.zeros_like(band, dtype=np.uint8)
+#     mask_data[band > threshold] = 255
+#     mask_data[mask_zeros] = 0
+
+#     # temporary filename in output_dir
+#     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tif", dir=output_dir)
+#     os.close(tmp_fd)  # we will open with rasterio
+#     local_profile = profile.copy()
+#     # adjust the transform for the chunk's window
+#     # compute window transform using src transform in parent (we do not have it here),
+#     # so write the chunk with default transform and encode coords in the filename.
+#     local_profile.update(count=1, dtype=rasterio.uint8, height=mask_data.shape[1], width=mask_data.shape[2] if mask_data.ndim==3 else mask_data.shape[0])
+
+#     # write chunk to tmp_path (we will read it back in parent and write to final)
+#     with rasterio.open(tmp_path, 'w', **local_profile) as dst:
+#         # mask_data might be 2D or 3D with singleton band dimension
+#         if mask_data.ndim == 3:
+#             dst.write(mask_data[0], 1)
+#         else:
+#             dst.write(mask_data, 1)
+
+#     # return the path and coordinates so parent can put it correctly
+#     return tmp_path, (row_start, col_start, row_end, col_end)
+
+
+# @monitor_parallel_performance
+# def create_masks_for_first_n_bands_parallel_chunked(
+#     input_path,
+#     n,
+#     threshold=100,
+#     output_dir="parallel_with_chunking_results",
+#     k=2,
+#     max_workers=None
+# ):
+#     """
+#     New implementation that writes the final band mask incrementally to disk as chunks complete.
+#     This avoids reading all chunk files into memory and avoids rasterio.merge().
+#     """
+#     os.makedirs(output_dir, exist_ok=True)
+#     with rasterio.open(input_path) as src:
+#         profile = src.profile.copy()
+#         crs = src.crs
+#         transform = src.transform
+#         rows, cols = src.height, src.width
+#         total_bands = min(n, src.count)
+
+#     chunks = get_chunks(rows, cols, k)
+
+#     # conservative default: half of CPU count to avoid too many GDAL handles
+#     if max_workers is None:
+#         max_workers = max(1, (os.cpu_count() or 2) // 2)
+
+#     for i in range(total_bands):
+#         print(f"\nProcessing Band {i + 1}/{total_bands}")
+#         band_mask_path = os.path.join(output_dir, f"mask_band_{i + 1}.tif")
+
+#         # prepare final band file with zeros (so we can write windows to it)
+#         out_profile = profile.copy()
+#         out_profile.update(count=1, dtype=rasterio.uint8, height=rows, width=cols, transform=transform)
+#         with rasterio.open(band_mask_path, 'w', **out_profile) as dst:
+#             # write an initial zero array to reserve file on disk
+#             zeros = np.zeros((rows, cols), dtype=np.uint8)
+#             # write in one shot might be heavy; instead write row-blocks to avoid huge memory usage
+#             # but here zeros will be large if image huge; so write row-wise in a loop
+#             row_block = 1024
+#             for r in range(0, rows, row_block):
+#                 r_end = min(rows, r + row_block)
+#                 dst.write(zeros[r:r_end, :], 1, window=((r, r_end), (0, cols)))
+
+#         # process chunks in parallel (each worker writes a small temp tile)
+#         chunk_paths = []
+#         with ProcessPoolExecutor(max_workers=max_workers) as executor:
+#             futures = {
+#                 executor.submit(process_chunk_mask, i, input_path, threshold, chunk, output_dir, profile): chunk
+#                 for chunk in chunks
+#             }
+#             for future in as_completed(futures):
+#                 try:
+#                     tmp_path, (r0, c0, r1, c1) = future.result()
+#                 except Exception as e:
+#                     print("Worker failed:", e)
+#                     continue
+
+#                 # Now parent opens tmp_path, reads data and writes to final band_mask_path in window
+#                 with rasterio.open(tmp_path) as tmp_ds, rasterio.open(band_mask_path, 'r+') as dst:
+#                     data = tmp_ds.read(1)
+#                     # write into the final mask using the same window coords
+#                     dst.write(data, 1, window=((r0, r1), (c0, c1)))
+
+#                 # remove temp tile right away
+#                 try:
+#                     os.remove(tmp_path)
+#                 except OSError:
+#                     pass
+
+#         # Create GeoJSON from the final mask
+#         with rasterio.open(band_mask_path) as final_ds:
+#             # read in reasonably sized windows to avoid one-shot huge read if image huge
+#             mask_full = final_ds.read(1)
+#             shapes_gen = shapes(mask_full, mask=(mask_full > 0), transform=final_ds.transform)
+#             geoms = [shape(geom) for geom, val in shapes_gen if val == 255]
+#             if geoms:
+#                 gdf = gpd.GeoDataFrame(geometry=geoms, crs=crs)
+#                 band_geojson_path = os.path.join(output_dir, f"mask_band_{i + 1}.geojson")
+#                 gdf.to_file(band_geojson_path, driver="GeoJSON")
+#                 print(f"✅ Created: {band_mask_path} & {band_geojson_path}")
+#             else:
+#                 print(f"⚠️ Band {i + 1}: No pixels above threshold found.")
+
+#     print(f"\nStep-C completed with chunking (k={k})")
+
+def process_chunk_to_mask(i, input_path, threshold, chunk):
+    """Worker: read one chunk, apply threshold, return the (window, data) pair."""
     row_start, col_start, row_end, col_end = chunk
     with rasterio.open(input_path) as src:
-        # read only the window
         band = src.read(i + 1, window=((row_start, row_end), (col_start, col_end)))
 
     mask_zeros = (band == 0)
@@ -166,29 +284,10 @@ def process_chunk_mask(i, input_path, threshold, chunk, output_dir, profile):
     mask_data[band > threshold] = 255
     mask_data[mask_zeros] = 0
 
-    # temporary filename in output_dir
-    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tif", dir=output_dir)
-    os.close(tmp_fd)  # we will open with rasterio
-    local_profile = profile.copy()
-    # adjust the transform for the chunk's window
-    # compute window transform using src transform in parent (we do not have it here),
-    # so write the chunk with default transform and encode coords in the filename.
-    local_profile.update(count=1, dtype=rasterio.uint8, height=mask_data.shape[1], width=mask_data.shape[2] if mask_data.ndim==3 else mask_data.shape[0])
-
-    # write chunk to tmp_path (we will read it back in parent and write to final)
-    with rasterio.open(tmp_path, 'w', **local_profile) as dst:
-        # mask_data might be 2D or 3D with singleton band dimension
-        if mask_data.ndim == 3:
-            dst.write(mask_data[0], 1)
-        else:
-            dst.write(mask_data, 1)
-
-    # return the path and coordinates so parent can put it correctly
-    return tmp_path, (row_start, col_start, row_end, col_end)
-
+    return ((row_start, col_start, row_end, col_end), mask_data)
 
 @monitor_parallel_performance
-def create_masks_for_first_n_bands_parallel_chunked(
+def create_masks_for_first_n_bands_parallel_chunked_optimized(
     input_path,
     n,
     threshold=100,
@@ -197,10 +296,13 @@ def create_masks_for_first_n_bands_parallel_chunked(
     max_workers=None
 ):
     """
-    New implementation that writes the final band mask incrementally to disk as chunks complete.
-    This avoids reading all chunk files into memory and avoids rasterio.merge().
+    Optimized Step-C:
+    - Performs chunked parallel thresholding for first n bands
+    - Writes chunks directly into final raster (no temp files)
+    - Vectorization done sequentially after all raster masks are created
     """
     os.makedirs(output_dir, exist_ok=True)
+
     with rasterio.open(input_path) as src:
         profile = src.profile.copy()
         crs = src.crs
@@ -210,68 +312,52 @@ def create_masks_for_first_n_bands_parallel_chunked(
 
     chunks = get_chunks(rows, cols, k)
 
-    # conservative default: half of CPU count to avoid too many GDAL handles
     if max_workers is None:
         max_workers = max(1, (os.cpu_count() or 2) // 2)
 
+
+
+    # ---- Stage 1: Create all raster mask files ----
     for i in range(total_bands):
         print(f"\nProcessing Band {i + 1}/{total_bands}")
         band_mask_path = os.path.join(output_dir, f"mask_band_{i + 1}.tif")
 
-        # prepare final band file with zeros (so we can write windows to it)
         out_profile = profile.copy()
         out_profile.update(count=1, dtype=rasterio.uint8, height=rows, width=cols, transform=transform)
         with rasterio.open(band_mask_path, 'w', **out_profile) as dst:
-            # write an initial zero array to reserve file on disk
-            zeros = np.zeros((rows, cols), dtype=np.uint8)
-            # write in one shot might be heavy; instead write row-blocks to avoid huge memory usage
-            # but here zeros will be large if image huge; so write row-wise in a loop
-            row_block = 1024
-            for r in range(0, rows, row_block):
-                r_end = min(rows, r + row_block)
-                dst.write(zeros[r:r_end, :], 1, window=((r, r_end), (0, cols)))
-
-        # process chunks in parallel (each worker writes a small temp tile)
-        chunk_paths = []
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(process_chunk_mask, i, input_path, threshold, chunk, output_dir, profile): chunk
-                for chunk in chunks
-            }
-            for future in as_completed(futures):
-                try:
-                    tmp_path, (r0, c0, r1, c1) = future.result()
-                except Exception as e:
-                    print("Worker failed:", e)
-                    continue
-
-                # Now parent opens tmp_path, reads data and writes to final band_mask_path in window
-                with rasterio.open(tmp_path) as tmp_ds, rasterio.open(band_mask_path, 'r+') as dst:
-                    data = tmp_ds.read(1)
-                    # write into the final mask using the same window coords
+            # Parallel chunk processing
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(process_chunk_to_mask, i, input_path, threshold, chunk)
+                           for chunk in chunks]
+                for future in as_completed(futures):
+                    try:
+                        (r0, c0, r1, c1), data = future.result()
+                    except Exception as e:
+                        print("Worker failed:", e)
+                        continue
+                    # Directly write chunk into the final raster
                     dst.write(data, 1, window=((r0, r1), (c0, c1)))
 
-                # remove temp tile right away
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+        print(f"✅ Band {i + 1} mask raster written: {band_mask_path}")
 
-        # Create GeoJSON from the final mask
-        with rasterio.open(band_mask_path) as final_ds:
-            # read in reasonably sized windows to avoid one-shot huge read if image huge
-            mask_full = final_ds.read(1)
-            shapes_gen = shapes(mask_full, mask=(mask_full > 0), transform=final_ds.transform)
+    # ---- Stage 2: Vectorization (done sequentially to avoid memory spikes) ----
+    for i in range(total_bands):
+        band_mask_path = os.path.join(output_dir, f"mask_band_{i + 1}.tif")
+        band_geojson_path = os.path.join(output_dir, f"mask_band_{i + 1}.geojson")
+        with rasterio.open(band_mask_path) as ds:
+            mask_data = ds.read(1)
+            shapes_gen = shapes(mask_data, mask=(mask_data > 0), transform=ds.transform)
             geoms = [shape(geom) for geom, val in shapes_gen if val == 255]
             if geoms:
-                gdf = gpd.GeoDataFrame(geometry=geoms, crs=crs)
-                band_geojson_path = os.path.join(output_dir, f"mask_band_{i + 1}.geojson")
+                gdf = gpd.GeoDataFrame(geometry=geoms, crs=ds.crs)
                 gdf.to_file(band_geojson_path, driver="GeoJSON")
-                print(f"✅ Created: {band_mask_path} & {band_geojson_path}")
+                print(f"✅ GeoJSON created for Band {i + 1}")
             else:
                 print(f"⚠️ Band {i + 1}: No pixels above threshold found.")
 
-    print(f"\nStep-C completed with chunking (k={k})")
+    print(f"\n✅ Step-C completed (optimized, k={k})")
+
+
 
 
 
@@ -286,4 +372,4 @@ if __name__ == "__main__":
 
     apply_gain_offset_parallel_chunked(input_image, stepA_output, gain=0.9, offset=5, num_bands=65, k=k)
     create_mask_and_geojson(stepA_output, band_index=50, threshold=100, output_dir=output_dir)
-    create_masks_for_first_n_bands_parallel_chunked(stepA_output, 20, 100, output_dir=output_dir, k=k)
+    create_masks_for_first_n_bands_parallel_chunked_optimized(stepA_output, 20, 100, output_dir=output_dir, k=k)

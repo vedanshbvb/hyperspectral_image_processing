@@ -224,15 +224,15 @@ Each results folder stores the output files (`mask.tif`, `mask.geojson`).
 | ------------------- | ------ | -------- | ---------------- | 
 | Normal              | Step-B | 0.17        | 43.14                
 | Normal              | Step-A | 1.50        | 801.40                | 
-| Parallel            | Step-A | 0.53        | 1260.16                | 
-| Parallel + Chunking(2) | Step-A | 0.75        | 1123.76                | 
-| Parallel + Chunking(4) | Step-A | 1.38        | 1074.70             | 
-| Parallel + Chunking(8) | Step-A | 3.64        | 1053.89                | 
+| Parallel            | Step-A | 0.78        | 1252.18                | 
+| Parallel + Chunking(2) | Step-A | 0.81        | 1116.89                | 
+| Parallel + Chunking(4) | Step-A | 1.38        | 1067.11             | 
+| Parallel + Chunking(8) | Step-A | 3.77        | 1054.23                | 
 | Normal              | Step-C | 1.21        | 47.15               |  
-| Parallel            | Step-C | 0.49        | 1582.95                |   
-| Parallel + Chunking(2) | Step-C | 3.66        | 1352.41                |  
-| Parallel + Chunking(4) | Step-C | 6.87        | 2322.66                  |
-| Parallel + Chunking(8) | Step-C | 17.48        | 4904.85                |      
+| Parallel            | Step-C | 0.61        | 1586.25                |   
+| Parallel + Chunking(2) | Step-C | 2.75        | 781.41                |  
+| Parallel + Chunking(4) | Step-C | 3.38        | 837.08                  |
+| Parallel + Chunking(8) | Step-C | 5.46        | 878.46           |      
 
 
 ## Screenshots

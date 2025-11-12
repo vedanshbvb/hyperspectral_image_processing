@@ -3,6 +3,9 @@
 This project performs specific operations on a **hyperspectral satellite image** (`sample_image.tif`) in a structured, modular, and performance-optimized way.  
 The goal is to showcase both **correctness** and **software engineering principles**, including performance benchmarking, modularity, and reproducibility.
 
+What are hyperspectral image? A normal image has 3 bands(R,G,B). A hyperspectral image has many such bands.    
+Image link: https://drive.google.com/file/d/1PLeFwgYsdM8kaA41jN6FGmVLa7m9yjTX/view?usp=sharing
+
 ---
 
 ## Time and Space Complexity

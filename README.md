@@ -238,6 +238,9 @@ Each results folder stores the output files (`mask.tif`, `mask.geojson`).
 | Parallel + Chunking(8) | Step-C | 2.82        | 761.30           |      
 
 
+The trend is opposite for step-c because of overhead. We can see that the increase in memory is ~6%
+
+
 ## Screenshots
 When you run, it should look something like this   
 
